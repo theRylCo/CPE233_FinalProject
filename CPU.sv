@@ -1,0 +1,159 @@
+`timescale 1ns/1ps
+
+module CPU(
+input logic CLK,
+input logic RST,
+input logic INTR,
+input logic [31:0] IOBUS_IN,
+output logic [31:0] IOBUS_OUT,
+output logic [31:0] IOBUS_ADDR,
+output logic IOBUS_WR
+);
+
+logic [31:0] PC,PC_PLUS4,IR;
+logic [31:0] RF_RS1,RF_RS2,RF_WD;
+logic [31:0] U_TYPE,I_TYPE,S_TYPE,B_TYPE,J_TYPE;
+logic [31:0] ALU_A,ALU_B,ALU_RESULT;
+logic [31:0] JAL,BRANCH,JALR,MEM_DOUT2;
+logic BR_EQ,BR_LT,BR_LTU;
+logic PC_WRITE,REG_WRITE,MEM_WE2,MEM_RDEN1,MEM_RDEN2,CU_RESET;
+logic [1:0] PC_SOURCE,RF_WR_SEL,ALU_SRCB,MEM_SIZE;
+logic ALU_SRCA,MEM_SIGN;
+logic [3:0] ALU_FUN;
+
+assign IOBUS_ADDR = ALU_RESULT;
+assign IOBUS_OUT  = RF_RS2;
+
+// ALU source A mux
+always_comb begin
+    case(ALU_SRCA)
+        1'b0: ALU_A = RF_RS1;
+        1'b1: ALU_A = U_TYPE;
+    endcase
+end
+
+// ALU source B mux
+always_comb begin
+    case(ALU_SRCB)
+        2'd0: ALU_B = RF_RS2;
+        2'd1: ALU_B = I_TYPE;
+        2'd2: ALU_B = S_TYPE;
+        default: ALU_B = 32'h00000000;
+    endcase
+end
+
+// register writeback mux
+always_comb begin
+    case(RF_WR_SEL)
+        2'd0: RF_WD = PC_PLUS4;
+        2'd1: RF_WD = MEM_DOUT2;
+        2'd2: RF_WD = ALU_RESULT;
+        2'd3: RF_WD = U_TYPE;
+        default: RF_WD = 32'h00000000;
+    endcase
+end
+
+pcm PC0(
+.PCM_RST(RST | CU_RESET),
+.PCM_WE(PC_WRITE),
+.PCM_CLK(CLK),
+.PCM_SEL(PC_SOURCE),
+.PCM_JAL(JAL),
+.PCM_JALR(JALR),
+.PCM_BRANCH(BRANCH),
+.PCM_PLUS4(PC_PLUS4),
+.PCM_COUNT(PC)
+);
+
+Memory MEM0(
+.MEM_CLK(CLK),
+.MEM_RDEN1(MEM_RDEN1),
+.MEM_RDEN2(MEM_RDEN2),
+.MEM_WE2(MEM_WE2),
+.MEM_ADDR1(PC[15:2]),
+.MEM_ADDR2(ALU_RESULT),
+.MEM_DIN2(RF_RS2),
+.MEM_SIZE(MEM_SIZE),
+.MEM_SIGN(MEM_SIGN),
+.IO_IN(IOBUS_IN),
+.IO_WR(IOBUS_WR),
+.MEM_DOUT1(IR),
+.MEM_DOUT2(MEM_DOUT2)
+);
+
+REG_FILE RF0(
+.RF_CLK(CLK),
+.RF_WE(REG_WRITE),
+.RF_ADR1(IR[19:15]),
+.RF_ADR2(IR[24:20]),
+.RF_WA(IR[11:7]),
+.RF_WD(RF_WD),
+.RF_RS1(RF_RS1),
+.RF_RS2(RF_RS2)
+);
+
+IMM_GEN IMM0(
+.IR(IR),
+.U_TYPE(U_TYPE),
+.I_TYPE(I_TYPE),
+.S_TYPE(S_TYPE),
+.B_TYPE(B_TYPE),
+.J_TYPE(J_TYPE)
+);
+
+BRANCH_COND_GEN BCG0(
+.BCG_RS1(RF_RS1),
+.BCG_RS2(RF_RS2),
+.BCG_BR_EQ(BR_EQ),
+.BCG_BR_LT(BR_LT),
+.BCG_BR_LTU(BR_LTU)
+);
+
+BRANCH_GEN BAG0(
+.PC(PC),
+.J_TYPE(J_TYPE),
+.B_TYPE(B_TYPE),
+.I_TYPE(I_TYPE),
+.RS1(RF_RS1),
+.JAL(JAL),
+.BRANCH(BRANCH),
+.JALR(JALR)
+);
+
+ALU ALU0(
+.ALU_A(ALU_A),
+.ALU_B(ALU_B),
+.ALU_FUN(ALU_FUN),
+.ALU_RESULT(ALU_RESULT)
+);
+
+CU_FSM FSM0(
+.CU_CLK(CLK),
+.CU_RST(RST),
+.CU_INTR(INTR),
+.CU_OPCODE(IR[6:0]),
+.CU_PC_WRITE(PC_WRITE),
+.CU_REG_WRITE(REG_WRITE),
+.CU_MEM_WE2(MEM_WE2),
+.CU_MEM_RDEN1(MEM_RDEN1),
+.CU_MEM_RDEN2(MEM_RDEN2),
+.CU_RESET(CU_RESET)
+);
+
+CU_DCDR DCDR0(
+.CU_OPCODE(IR[6:0]),
+.CU_FUNCT3(IR[14:12]),
+.CU_IR30(IR[30]),
+.CU_BR_EQ(BR_EQ),
+.CU_BR_LT(BR_LT),
+.CU_BR_LTU(BR_LTU),
+.CU_ALU_FUN(ALU_FUN),
+.CU_ALU_SRCA(ALU_SRCA),
+.CU_ALU_SRCB(ALU_SRCB),
+.CU_PC_SOURCE(PC_SOURCE),
+.CU_RF_WR_SEL(RF_WR_SEL),
+.CU_MEM_SIZE(MEM_SIZE),
+.CU_MEM_SIGN(MEM_SIGN)
+);
+
+endmodule
